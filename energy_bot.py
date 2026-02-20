@@ -2,6 +2,7 @@ import os
 import json
 import threading
 import requests
+import asyncio
 from flask import Flask
 from groq import Groq
 from telegram import Update
@@ -64,18 +65,26 @@ def ask_groq(user_question: str, energy_data: dict) -> str:
             {
                 "role": "system",
                 "content": (
-                    "انت مساعد ذكي متخصص في متابعة استهلاك الكهرباء في البيت.\n"
-                    "بتتكلم بالعامية المصرية بطريقة بسيطة ومفهومة.\n"
-                    "عندك بيانات حية من عداد ذكي بيراقب 5 احمال كهربية.\n"
-                    "لما حد يسالك عن سبب غلا الكهرباء او الاستهلاك، حلل البيانات وجاوبه بشكل عملي وواضح.\n"
+                    "انت مساعد ذكي متخصص في متابعة استهلاك الكهرباء في البيت.
+"
+                    "بتتكلم بالعامية المصرية بطريقة بسيطة ومفهومة.
+"
+                    "عندك بيانات حية من عداد ذكي بيراقب 5 احمال كهربية.
+"
+                    "لما حد يسالك عن سبب غلا الكهرباء او الاستهلاك، حلل البيانات وجاوبه بشكل عملي وواضح.
+"
                     "استخدم ارقام حقيقية من البيانات في ردودك دايما."
                 )
             },
             {
                 "role": "user",
                 "content": (
-                    f"دي بيانات العداد الذكي دلوقتي:\n\n"
-                    f"{json.dumps(energy_data, ensure_ascii=False, indent=2)}\n\n"
+                    f"دي بيانات العداد الذكي دلوقتي:
+
+"
+                    f"{json.dumps(energy_data, ensure_ascii=False, indent=2)}
+
+"
                     f"سؤال المستخدم: {user_question}"
                 )
             }
@@ -91,19 +100,30 @@ def ask_groq(user_question: str, energy_data: dict) -> str:
 # ============================================================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "اهلا! انا بوت العداد الذكي بتاعك\n\n"
-        "سالني اي حاجة عن الكهرباء، مثلا:\n\n"
-        "ليه النور غالي الشهر ده؟\n"
-        "مين اكتر حاجة بتاكل كهرباء؟\n"
-        "ايه معامل القدرة بتاع الموتور؟\n"
-        "اعمل ايه عشان اوفر في الفاتورة؟\n\n"
+        "اهلا! انا بوت العداد الذكي بتاعك
+
+"
+        "سالني اي حاجة عن الكهرباء، مثلا:
+
+"
+        "ليه النور غالي الشهر ده؟
+"
+        "مين اكتر حاجة بتاكل كهرباء؟
+"
+        "ايه معامل القدرة بتاع الموتور؟
+"
+        "اعمل ايه عشان اوفر في الفاتورة؟
+
+"
         "او اكتب /status تشوف كل الاحمال دلوقتي"
     )
 
 async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("جاري جلب البيانات من العداد...")
     data = fetch_blynk_data()
-    msg = "حالة العداد دلوقتي:\n\n"
+    msg = "حالة العداد دلوقتي:
+
+"
     total_w = 0
     for name, vals in data.items():
         if "خطأ" not in vals:
@@ -112,7 +132,10 @@ async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             kwh = vals["طاقة_kWh"]
             icon = "🔴" if pf < 0.85 else "🟢"
             total_w += w
-            msg += f"{icon} {name}\n  {w}W | PF: {pf} | {kwh} kWh\n\n"
+            msg += f"{icon} {name}
+  {w}W | PF: {pf} | {kwh} kWh
+
+"
     msg += f"الاجمالي: {round(total_w, 1)}W"
     await update.message.reply_text(msg)
 
@@ -127,12 +150,32 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ============================================================
 # تشغيل البوت
 # ============================================================
-if __name__ == "__main__":
+async def main():
     print("Smart Energy Bot started!")
-    t = threading.Thread(target=run_flask, daemon=True)
-    t.start()
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("status", status_cmd))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    app.run_polling()
+    
+    # Start Flask in a separate thread
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+
+    # Build and start Telegram Bot
+    application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("status", status_cmd))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    
+    # Run polling correctly for modern PTB
+    async with application:
+        await application.initialize()
+        await application.start()
+        await application.updater.start_polling()
+        
+        # Keep running until the app is stopped
+        while True:
+            await asyncio.sleep(1)
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        pass
