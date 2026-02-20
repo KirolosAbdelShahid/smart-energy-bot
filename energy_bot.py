@@ -8,14 +8,14 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
 BLYNK_TOKEN = os.environ.get("BLYNK_AUTH", "PQQtawp93VKXnQBxMMzEr7wF47fKXe5R")
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "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")
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "8406915756:AAGuyczfATvATa_HKGBSRlrl5MLqY5JyVxE")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
+BLYNK_TEMPLATE = os.environ.get("BLYNK_TEMPLATE", "TMPL5zvDb_CHW")
 
 BLYNK_BASE = "https://blynk.cloud/external/api/get"
 LOADS = ["لمبة", "مروحة", "شفاط", "موتور", "تلاجة"]
 
 groq_client = Groq(api_key=GROQ_API_KEY)
-
 flask_app = Flask(__name__)
 
 @flask_app.route('/')
@@ -43,13 +43,13 @@ SYSTEM_PROMPT = "انت مساعد ذكي متخصص في الكهرباء. بت
 def ask_groq(user_question, energy_data):
     user_content = "دي بيانات العداد دلوقتي:\n" + json.dumps(energy_data, ensure_ascii=False, indent=2) + "\nسؤال المستخدم: " + user_question
     response = groq_client.chat.completions.create(
-        model="openai/gpt-oss-120b",
+        model="llama-3.3-70b-versatile",
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_content}
         ],
         temperature=0.7,
-        max_completion_tokens=1024,
+        max_tokens=1024,
         stream=False
     )
     return response.choices[0].message.content
