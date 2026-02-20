@@ -1,5 +1,6 @@
 import os
 import json
+import time
 import threading
 import requests
 from flask import Flask
@@ -83,11 +84,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await thinking.edit_text(reply)
 
 if __name__ == "__main__":
+    print("Smart Energy Bot starting...")
+    # Wait for previous instance to fully stop
+    time.sleep(10)
     print("Smart Energy Bot started!")
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
-    application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    application = (
+        ApplicationBuilder()
+        .token(TELEGRAM_TOKEN)
+        .connect_timeout(30)
+        .read_timeout(30)
+        .build()
+    )
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("status", status_cmd))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    application.run_polling(drop_pending_updates=True)
+    application.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
