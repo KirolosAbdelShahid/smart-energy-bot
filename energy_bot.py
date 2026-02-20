@@ -1,3 +1,14 @@
+import threading
+from flask import Flask
+flask_app = Flask(__name__)
+
+@flask_app.route('/')
+def home():
+    return 'Smart Energy Bot is running!'
+
+def run_flask():
+    flask_app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
+
 import os
 import requests
 import json
@@ -111,6 +122,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ============================================================
 if __name__ == "__main__":
     print("Smart Energy Bot started!")
+        t = threading.Thread(target=run_flask, daemon=True)
+    t.start()
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start",  start))
     app.add_handler(CommandHandler("status", status_cmd))
