@@ -9,26 +9,25 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, fil
 
 # ===== Config =====
 BLYNK_TOKEN = os.environ.get("BLYNK_AUTH", "PQQtawp93VKXnQBxMMzEr7wF47fKXe5R")
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 BLYNK_BASE = "https://blynk.cloud/external/api/get"
-OPENAI_URL = "https://api.openai.com/v1/chat/completions"
-MODEL = "gpt-4o-mini"
+GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
 
 LOADS_AR = ["لمبة", "مروحة", "شفاط", "موتور", "تلاجة"]
 
-print(f"OPENAI_API_KEY set: {bool(OPENAI_API_KEY)} (len={len(OPENAI_API_KEY)})")
+print(f"GEMINI_API_KEY set: {bool(GEMINI_API_KEY)}")
 print(f"TELEGRAM_TOKEN set: {bool(TELEGRAM_TOKEN)}")
 
 flask_app = Flask(__name__)
 
 @flask_app.route('/')
 def home():
-    return 'Smart Energy Bot is running!'
+    return 'Smart Energy Bot is running with Gemini!'
 
 @flask_app.route('/health')
 def health():
-    return json.dumps({"status": "ok", "openai_key": bool(OPENAI_API_KEY), "model": MODEL})
+    return json.dumps({"status": "ok", "gemini_key": bool(GEMINI_API_KEY)})
 
 def run_flask():
     port = int(os.environ.get('PORT', 8080))
@@ -47,163 +46,121 @@ def fetch_blynk_data():
             data[name] = {"error": str(e)}
     return data
 
-SYSTEM_PROMPT = """انت مساعد كهربي ذكي اسمك عدادي.
-بتتكلم بالعامية المصرية بشكل طبيعي وودود.
-عندك بيانات من عداد كهرباء ذكي بيراقب 5 احمال كهربية في البيت:
-- لمبة، مروحة، شفاط، موتور، تلاجة
+SYSTEM_PROMPT = """انت "عدادي" - المساعد الذكي للبيت المصري.
+بتتكلم عامية مصرية "صايعة" وفاهمة، كأنك واحد صاحبه قاعد معاه.
+مهمتك تحلل بيانات عداد الكهرباء وتقول للناس الحقيقة بذكاء.
 
-لما حد يسألك:
-- اديه ارقام حقيقية من البيانات
-- وضح ايه اللي بياكل كهرباء اكتر
-- اقترح حلول عملية توفر فلوس
-- لو PF اقل من 0.85 قوله في مشكلة في الحمل ده
-- اشرح بطريقة بسيطة يفهمها اي حد
-- خليك مختصر ومفيد"""
+القواعد:
+1. اتكلم مصري طبيعي جداً (مثلاً: "يا سيدي النور غالي عشان التلاجة دي واكلة حقنا"، "فكك من الموتور ده دلوقتي").
+2. لما تحسب التكلفة: سعر الكيلو وات ساعة (kWh) في مصر حالياً حوالي 1.35 جنيه (شريحة متوسطة). احسب اليومي والشهري.
+3. اشرح الأرقام: يعني إيه PF (معامل القدرة)؟ لو أقل من 0.85 قوله إن الجهاز ده "بيهدر كهرباء" ومحتاج صيانة أو مكثف.
+4. قارن الأحمال: قول مين أكتر واحد "مفترى" في سحب الكهرباء.
+5. ادِ نصايح عملية: "اقفل الشفاط ده وانت مش محتاجه"، "الموتور شغال كتير ليه؟".
 
-def ask_openai(user_question, energy_data):
-    if not OPENAI_API_KEY:
-        return "مفيش OPENAI_API_KEY - الذكاء الاصطناعي مش شغال"
+بيانات العداد اللي معاك دلوقتي هبعتهالك في كل رسالة."""
+
+def ask_gemini(user_question, energy_data):
+    if not GEMINI_API_KEY:
+        return "يا صاحبي مفيش مفتاح Gemini API.. شغلني الأول!"
     
-    headers = {
-        "Authorization": f"Bearer {OPENAI_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    
-    data_summary = ""
-    total_w = 0
-    for name, vals in energy_data.items():
-        if "error" not in vals:
-            total_w += vals.get("W", 0)
-            pf_status = "(مشكلة في الحمل!)" if vals.get("PF", 1) < 0.85 else ""
-            data_summary += f"- {name}: {vals['W']}W | PF:{vals['PF']} {pf_status} | {vals['kWh']}kWh | {vals['VA']}VA\n"
-        else:
-            data_summary += f"- {name}: خطأ في القراءة\n"
-    
-    user_content = f"بيانات العداد دلوقتي:\n{data_summary}\nالاجمالي: {round(total_w,1)}W\n\nسؤال المستخدم: {user_question}"
+    data_text = json.dumps(energy_data, ensure_ascii=False, indent=2)
+    prompt = f"{SYSTEM_PROMPT}
+
+بيانات العداد الحالية:
+{data_text}
+
+سؤال المستخدم: {user_question}"
     
     payload = {
-        "model": MODEL,
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user",   "content": user_content}
-        ],
-        "temperature": 0.7,
-        "max_tokens": 800
+        "contents": [{
+            "parts": [{"text": prompt}]
+        }],
+        "generationConfig": {
+            "temperature": 0.7,
+            "maxOutputTokens": 1000,
+        }
     }
     
     try:
-        r = requests.post(OPENAI_URL, headers=headers, json=payload, timeout=30)
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+        r = requests.post(url, json=payload, timeout=30)
         if r.status_code == 200:
-            return r.json()["choices"][0]["message"]["content"]
-        elif r.status_code == 429:
-            return "البوت وصل للحد المسموح، جرب تاني بعد شوية!"
-        elif r.status_code == 401:
-            return "مشكلة في مفتاح OpenAI - كلم المسؤول!"
+            return r.json()['candidates'][0]['content']['parts'][0]['text']
         else:
-            return f"خطأ {r.status_code}: {r.text[:200]}"
+            return f"حصلت مشكلة في Gemini (كود {r.status_code}): {r.text[:200]}"
     except Exception as e:
-        return f"خطأ في الاتصال: {str(e)}"
+        return f"يا ساتر! حصل خطأ وأنا بكلم جوجل: {str(e)}"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = (
-        "اهلا! انا عدادي - بوت العداد الذكي \U0001f4a1\n\n"
-        "بقدر اساعدك في:\n"
-        "\U0001f50d ليه الفاتورة غالية الشهر ده?\n"
-        "\U0001f4ca مين اكتر حاجة بتاكل كهرباء?\n"
-        "\U0001f4b0 ازاي توفر في الكهرباء?\n\n"
-        "الاوامر:\n"
-        "/status - شوف كل الاحمال دلوقتي\n"
-        "/tips - نصايح التوفير\n"
-        "/help - المساعدة\n\n"
-        "او اسالني اي سؤال بالعربي!"
+        "يا أهلاً بيك! أنا 'عدادي' 💡
+"
+        "أنا المساعد المصري بتاعك عشان نفهم الكهرباء دي بتروح فين.
+
+"
+        "اسألني أي حاجة:
+"
+        "• مين أكتر واحد بياكل كهرباء دلوقتي؟
+"
+        "• الكهرباء هتكلفني كام الشهر ده؟
+"
+        "• في حاجة خطر في العداد؟
+
+"
+        "التحكم:
+"
+        "/status - شوف الحالة بالتفصيل
+"
+        "/tips - نصايح توفير الكهرباء
+"
     )
     await update.message.reply_text(msg)
 
 async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("\U0001f504 جاري جلب البيانات من العداد...")
+    await update.message.reply_text("بشوفلك العداد.. ثانية واحدة 🧐")
     data = fetch_blynk_data()
-    msg = "\u26a1 حالة العداد دلوقتي:\n\n"
+    msg = "⚡ حالة العداد دلوقتي:
+
+"
     total_w = 0
     for name, vals in data.items():
         if "error" not in vals:
-            w   = vals["W"]
-            pf  = vals["PF"]
-            kwh = vals["kWh"]
-            va  = vals["VA"]
-            if pf < 0.85:
-                icon = "\U0001f534"
-                pf_note = " \u26a0\ufe0f PF منخفض!"
-            else:
-                icon = "\U0001f7e2"
-                pf_note = ""
+            w = vals["W"]; pf = vals["PF"]; kwh = vals["kWh"]
             total_w += w
-            msg += f"{icon} {name}: {w}W | PF:{pf}{pf_note} | {kwh}kWh\n"
+            icon = "🔴" if pf < 0.85 else "🟢"
+            msg += f"{icon} {name}: {w}W | PF:{pf} | {kwh}kWh
+"
         else:
-            msg += f"\u26a0\ufe0f {name}: خطأ في القراءة\n"
-    msg += f"\n\u26a1 الاجمالي: {round(total_w,1)}W\n"
-    cost_per_day = round(total_w * 24 / 1000 * 1.35, 2)
-    msg += f"\U0001f4b0 تكلفة تقريبية/يوم: {cost_per_day} جنيه"
+            msg += f"⚠️ {name}: قراءة غلط
+"
+    msg += f"
+🔥 السحب الإجمالي: {round(total_w,1)}W"
     await update.message.reply_text(msg)
 
 async def tips_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("\U0001f504 بحلل البيانات واديك نصايح...")
+    thinking = await update.message.reply_text("بحلل الأحمال وهديك الزتونة..")
     data = fetch_blynk_data()
-    question = "اديني نصايح عملية لتوفير الكهرباء بناءا على البيانات دي"
-    reply = ask_openai(question, data)
-    await update.message.reply_text(reply)
-
-async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = (
-        "\U0001f4cb الاوامر المتاحة:\n\n"
-        "/start - الترحيب\n"
-        "/status - حالة كل الاحمال دلوقتي\n"
-        "/tips - نصايح توفير الكهرباء\n"
-        "/help - الاوامر\n\n"
-        "\U0001f4ac او اسالني بالعربي مثلاً:\n"
-        "- ليه الفاتورة غالية?\n"
-        "- مين اكتر حاجة بتاكل?\n"
-        "- التلاجة بتاخد كام?"
-    )
-    await update.message.reply_text(msg)
+    reply = ask_gemini("اديني نصايح توفير بناء على البيانات دي وقولي مين أكتر حمل بيسحب", data)
+    await thinking.edit_text(reply)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_msg = update.message.text
-    thinking = await update.message.reply_text("\U0001f504 بجيب البيانات من العداد...")
+    thinking = await update.message.reply_text("ثواني أشوفلك الدنيا..")
     data = fetch_blynk_data()
-    await thinking.edit_text("\U0001f9e0 بحلل البيانات...")
-    reply = ask_openai(user_msg, data)
+    reply = ask_gemini(user_msg, data)
     await thinking.edit_text(reply)
 
 if __name__ == "__main__":
-    print("Smart Energy Bot starting...")
-    time.sleep(10)
-    print("Smart Energy Bot started!")
-    
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
     
     if not TELEGRAM_TOKEN:
-        print("ERROR: TELEGRAM_TOKEN not set!")
-        import sys
-        sys.exit(1)
-    
-    application = (
-        ApplicationBuilder()
-        .token(TELEGRAM_TOKEN)
-        .connect_timeout(30)
-        .get_updates_read_timeout(45)
-        .get_updates_connect_timeout(30)
-        .read_timeout(30)
-        .build()
-    )
-    
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("status", status_cmd))
-    application.add_handler(CommandHandler("tips", tips_cmd))
-    application.add_handler(CommandHandler("help", help_cmd))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    
-    application.run_polling(
-        drop_pending_updates=True,
-        allowed_updates=Update.ALL_TYPES
-    )
+        print("TELEGRAM_TOKEN is missing!")
+    else:
+        app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+        app.add_handler(CommandHandler("start", start))
+        app.add_handler(CommandHandler("status", status_cmd))
+        app.add_handler(CommandHandler("tips", tips_cmd))
+        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        print("Bot is polling...")
+        app.run_polling()
