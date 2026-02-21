@@ -73,7 +73,7 @@ def ask_gemini(user_question, energy_data):
     }
 
     try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+        url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
         r = requests.post(url, json=payload, timeout=30)
         if r.status_code == 200:
             return r.json()['candidates'][0]['content']['parts'][0]['text']
