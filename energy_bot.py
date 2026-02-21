@@ -16,10 +16,16 @@ BLYNK_BASE = "https://blynk.cloud/external/api/get"
 LOADS = ["Lomba", "Marwaha", "Shaffat", "Motor", "Tala9a"]
 LOADS_AR = ["لمبة", "مروحة", "شفاط", "موتور", "تلاجة"]
 
+print(f"GROQ_API_KEY set: {bool(GROQ_API_KEY)} (len={len(GROQ_API_KEY)})")
+print(f"TELEGRAM_TOKEN set: {bool(TELEGRAM_TOKEN)}")
+
 # Build Groq client only if key is set
 groq_client = None
 if GROQ_API_KEY:
     groq_client = Groq(api_key=GROQ_API_KEY)
+    print("Groq client initialized successfully")
+else:
+    print("WARNING: GROQ_API_KEY is empty!")
 
 flask_app = Flask(__name__)
 
@@ -39,11 +45,10 @@ def fetch_blynk_data():
     data = {}
     for i, name in enumerate(LOADS_AR):
         try:
-            # Blynk External API: ?token=...&pin=V0
-            w   = float(requests.get(f"{BLYNK_BASE}?token={BLYNK_TOKEN}&pin=V{i}",    timeout=5).text)
-            pf  = float(requests.get(f"{BLYNK_BASE}?token={BLYNK_TOKEN}&pin=V{i+5}", timeout=5).text)
+            w = float(requests.get(f"{BLYNK_BASE}?token={BLYNK_TOKEN}&pin=V{i}", timeout=5).text)
+            pf = float(requests.get(f"{BLYNK_BASE}?token={BLYNK_TOKEN}&pin=V{i+5}", timeout=5).text)
             kwh = float(requests.get(f"{BLYNK_BASE}?token={BLYNK_TOKEN}&pin=V{i+10}",timeout=5).text)
-            va  = float(requests.get(f"{BLYNK_BASE}?token={BLYNK_TOKEN}&pin=V{i+15}",timeout=5).text)
+            va = float(requests.get(f"{BLYNK_BASE}?token={BLYNK_TOKEN}&pin=V{i+15}",timeout=5).text)
             data[name] = {
                 "W": round(w, 2),
                 "PF": round(pf, 2),
@@ -70,7 +75,7 @@ def ask_groq(user_question, energy_data):
             model="llama-3.3-70b-versatile",
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user",   "content": user_content}
+                {"role": "user", "content": user_content}
             ],
             temperature=0.7,
             max_tokens=1024,
@@ -97,15 +102,15 @@ async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     total_w = 0
     for name, vals in data.items():
         if "error" not in vals:
-            w   = vals["W"]
-            pf  = vals["PF"]
+            w = vals["W"]
+            pf = vals["PF"]
             kwh = vals["kWh"]
             icon = "\U0001f534" if pf < 0.85 else "\U0001f7e2"
             total_w += w
             msg += f"{icon} {name}: {w}W | PF:{pf} | {kwh}kWh\n"
         else:
             msg += f"\u26a0\ufe0f {name}: {vals['error']}\n"
-    msg += f"\n\u26a1 Blynk: {round(total_w,1)}W"
+    msg += f"\n\u26a1 Total: {round(total_w,1)}W"
     await update.message.reply_text(msg)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -118,7 +123,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 if __name__ == "__main__":
     print("Smart Energy Bot starting...")
-    time.sleep(10)
+    # Wait for old instance to release Telegram polling
+    time.sleep(15)
     print("Smart Energy Bot started!")
 
     flask_thread = threading.Thread(target=run_flask, daemon=True)
@@ -133,15 +139,18 @@ if __name__ == "__main__":
         ApplicationBuilder()
         .token(TELEGRAM_TOKEN)
         .connect_timeout(30)
-                .get_updates_read_timeout(30)
-                .get_updates_connect_timeout(30)
+        .get_updates_read_timeout(45)
+        .get_updates_connect_timeout(30)
         .read_timeout(30)
         .build()
     )
+
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("status", status_cmd))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
     application.run_polling(
         drop_pending_updates=True,
-        allowed_updates=Update.ALL_TYPES
+        allowed_updates=Update.ALL_TYPES,
+        close_loop=False
     )
