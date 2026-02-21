@@ -1,6 +1,5 @@
 import os
 import json
-import time
 import threading
 import requests
 from flask import Flask
@@ -12,9 +11,7 @@ BLYNK_TOKEN = os.environ.get("BLYNK_AUTH", "PQQtawp93VKXnQBxMMzEr7wF47fKXe5R")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 BLYNK_BASE = "https://blynk.cloud/external/api/get"
-GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
-
-LOADS_AR = ["لمبة", "مروحة", "شفاط", "موتور", "تلاجة"]
+LOADS_AR = ["\u0644\u0645\u0628\u0629", "\u0645\u0631\u0648\u062d\u0629", "\u0634\u0641\u0627\u0637", "\u0645\u0648\u062a\u0648\u0631", "\u062a\u0644\u0627\u062c\u0629"]
 
 print(f"GEMINI_API_KEY set: {bool(GEMINI_API_KEY)}")
 print(f"TELEGRAM_TOKEN set: {bool(TELEGRAM_TOKEN)}")
@@ -46,26 +43,25 @@ def fetch_blynk_data():
             data[name] = {"error": str(e)}
     return data
 
-SYSTEM_PROMPT = """انت "عدادي" - المساعد الذكي للبيت المصري.
-بتتكلم عامية مصرية "صايعة" وفاهمة، كأنك واحد صاحبه قاعد معاه.
-مهمتك تحلل بيانات عداد الكهرباء وتقول للناس الحقيقة بذكاء.
-
-القواعد:
-1. اتكلم مصري طبيعي جداً (مثلاً: "يا سيدي النور غالي عشان التلاجة دي واكلة حقنا"، "فكك من الموتور ده دلوقتي").
-2. لما تحسب التكلفة: سعر الكيلو وات ساعة (kWh) في مصر حالياً حوالي 1.35 جنيه (شريحة متوسطة). احسب اليومي والشهري.
-3. اشرح الأرقام: يعني إيه PF (معامل القدرة)؟ لو أقل من 0.85 قوله إن الجهاز ده "بيهدر كهرباء" ومحتاج صيانة أو مكثف.
-4. قارن الأحمال: قول مين أكتر واحد "مفترى" في سحب الكهرباء.
-5. ادِ نصايح عملية: "اقفل الشفاط ده وانت مش محتاجه"، "الموتور شغال كتير ليه؟".
-
-بيانات العداد اللي معاك دلوقتي هبعتهالك في كل رسالة."""
+SYSTEM_PROMPT = (
+    "\u0627\u0646\u062a \"\u0639\u062f\u0627\u062f\u064a\" - \u0627\u0644\u0645\u0633\u0627\u0639\u062f \u0627\u0644\u0630\u0643\u064a \u0644\u0644\u0628\u064a\u062a \u0627\u0644\u0645\u0635\u0631\u064a.\n"
+    "\u0628\u062a\u062a\u0643\u0644\u0645 \u0639\u0627\u0645\u064a\u0629 \u0645\u0635\u0631\u064a\u0629 \u0637\u0628\u064a\u0639\u064a\u0629 \u062c\u062f\u0627\u064b.\n"
+    "\u0645\u0647\u0645\u062a\u0643:\n"
+    "1. \u062a\u062d\u0644\u064a\u0644 \u0628\u064a\u0627\u0646\u0627\u062a \u0639\u062f\u0627\u062f \u0627\u0644\u0643\u0647\u0631\u0628\u0627\u0621 (\u0644\u0645\u0628\u0629 \u060c \u0645\u0631\u0648\u062d\u0629 \u060c \u0634\u0641\u0627\u0637 \u060c \u0645\u0648\u062a\u0648\u0631 \u060c \u062a\u0644\u0627\u062c\u0629).\n"
+    "2. \u0644\u0648 PF \u0623\u0642\u0644 \u0645\u0646 0.85 \u0642\u0648\u0644 \u0625\u0646 \u0627\u0644\u062c\u0647\u0627\u0632 \u0628\u064a\u0647\u062f\u0631 \u0643\u0647\u0631\u0628\u0627\u0621.\n"
+    "3. \u062a\u0643\u0644\u0641\u0629 \u0627\u0644\u0643\u064a\u0644\u0648 \u0648\u0627\u062a \u0633\u0627\u0639\u0629 1.35 \u062c\u0646\u064a\u0647.\n"
+    "4. \u0642\u0627\u0631\u0646 \u0628\u064a\u0646 \u0627\u0644\u0623\u062d\u0645\u0627\u0644 \u0648\u0642\u0648\u0644 \u0645\u064a\u0646 \u0623\u0643\u062a\u0631 \u0648\u0627\u062d\u062f \u0628\u064a\u0633\u062d\u0628.\n"
+    "5. \u0627\u062f\u064a \u0646\u0635\u0627\u064a\u062d \u0639\u0645\u0644\u064a\u0629 \u0644\u062a\u0648\u0641\u064a\u0631 \u0627\u0644\u0643\u0647\u0631\u0628\u0627\u0621.\n"
+    "\u062e\u0644\u064a\u0643 \u0648\u062f\u0648\u062f \u0648\u0645\u062e\u062a\u0635\u0631 \u0648\u0645\u0641\u064a\u062f."
+)
 
 def ask_gemini(user_question, energy_data):
     if not GEMINI_API_KEY:
-        return "يا صاحبي مفيش مفتاح Gemini API.. شغلني الأول!"
-    
+        return "\u064a\u0627 \u0635\u0627\u062d\u0628\u064a \u0645\u0641\u064a\u0634 \u0645\u0641\u062a\u0627\u062d Gemini API.. \u0634\u063a\u0644\u0646\u064a \u0627\u0644\u0623\u0648\u0644!"
+
     data_text = json.dumps(energy_data, ensure_ascii=False, indent=2)
     prompt = SYSTEM_PROMPT + "\n\n" + data_text + "\n\n" + user_question
-    
+
     payload = {
         "contents": [{
             "parts": [{"text": prompt}]
@@ -75,72 +71,47 @@ def ask_gemini(user_question, energy_data):
             "maxOutputTokens": 1000,
         }
     }
-    
+
     try:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
         r = requests.post(url, json=payload, timeout=30)
         if r.status_code == 200:
             return r.json()['candidates'][0]['content']['parts'][0]['text']
         else:
-            return f"حصلت مشكلة في Gemini (كود {r.status_code}): {r.text[:200]}"
+            return f"\u062d\u0635\u0644\u062a \u0645\u0634\u0643\u0644\u0629 \u0641\u064a Gemini (\u0643\u0648\u062f {r.status_code}): {r.text[:200]}"
     except Exception as e:
-        return f"يا ساتر! حصل خطأ وأنا بكلم جوجل: {str(e)}"
+        return f"\u064a\u0627 \u0633\u0627\u062a\u0631! \u062d\u0635\u0644 \u062e\u0637\u0623: {str(e)}"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = (
-        "يا أهلاً بيك! أنا 'عدادي' 💡
-"
-        "أنا المساعد المصري بتاعك عشان نفهم الكهرباء دي بتروح فين.
-
-"
-        "اسألني أي حاجة:
-"
-        "• مين أكتر واحد بياكل كهرباء دلوقتي؟
-"
-        "• الكهرباء هتكلفني كام الشهر ده؟
-"
-        "• في حاجة خطر في العداد؟
-
-"
-        "التحكم:
-"
-        "/status - شوف الحالة بالتفصيل
-"
-        "/tips - نصايح توفير الكهرباء
-"
-    )
+    msg = "\u064a\u0627 \u0623\u0647\u0644\u0627\u064b \u0628\u064a\u0643! \u0623\u0646\u0627 \u0639\u062f\u0627\u062f\u064a \u0627\u0633\u0623\u0644\u0646\u064a \u0639\u0646 \u0643\u0647\u0631\u0628\u0627\u0621 \u0628\u064a\u062a\u0643. /status \u0644\u0634\u0648\u0641 \u0627\u0644\u062d\u0627\u0644\u0629 | /tips \u0644\u0646\u0635\u0627\u064a\u062d \u0627\u0644\u062a\u0648\u0641\u064a\u0631"
     await update.message.reply_text(msg)
 
 async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("بشوفلك العداد.. ثانية واحدة 🧐")
+    await update.message.reply_text("\u0628\u0634\u0648\u0641\u0644\u0643 \u0627\u0644\u0639\u062f\u0627\u062f.. \u062b\u0627\u0646\u064a\u0629 \u0648\u0627\u062d\u062f\u0629")
     data = fetch_blynk_data()
-    msg = "⚡ حالة العداد دلوقتي:
-
-"
+    msg = "\u062d\u0627\u0644\u0629 \u0627\u0644\u0639\u062f\u0627\u062f \u062f\u0644\u0648\u0642\u062a\u064a:\n"
     total_w = 0
     for name, vals in data.items():
         if "error" not in vals:
             w = vals["W"]; pf = vals["PF"]; kwh = vals["kWh"]
             total_w += w
-            icon = "🔴" if pf < 0.85 else "🟢"
-            msg += f"{icon} {name}: {w}W | PF:{pf} | {kwh}kWh
-"
+            icon = "R" if pf < 0.85 else "G"
+            cost_month = round(kwh * 24 * 30 * 1.35, 2)
+            msg += f"{icon} {name}: {w}W | PF:{pf} | {kwh}kWh | {cost_month} EGP/month\n"
         else:
-            msg += f"⚠️ {name}: قراءة غلط
-"
-    msg += f"
-🔥 السحب الإجمالي: {round(total_w,1)}W"
+            msg += f"? {name}: \u0642\u0631\u0627\u0621\u0629 \u063a\u0644\u0637\n"
+    msg += f"\n\u0627\u0644\u0633\u062d\u0628 \u0627\u0644\u0625\u062c\u0645\u0627\u0644\u064a: {round(total_w,1)}W"
     await update.message.reply_text(msg)
 
 async def tips_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    thinking = await update.message.reply_text("بحلل الأحمال وهديك الزتونة..")
+    thinking = await update.message.reply_text("\u0628\u062d\u0644\u0644 \u0627\u0644\u0623\u062d\u0645\u0627\u0644..")
     data = fetch_blynk_data()
-    reply = ask_gemini("اديني نصايح توفير بناء على البيانات دي وقولي مين أكتر حمل بيسحب", data)
+    reply = ask_gemini("\u0627\u062f\u064a\u0646\u064a \u0646\u0635\u0627\u064a\u062d \u062a\u0648\u0641\u064a\u0631 \u0628\u0646\u0627\u0621 \u0639\u0644\u0649 \u0627\u0644\u0628\u064a\u0627\u0646\u0627\u062a \u062f\u064a \u0648\u0642\u0648\u0644\u064a \u0645\u064a\u0646 \u0623\u0643\u062a\u0631 \u062d\u0645\u0644 \u0628\u064a\u0633\u062d\u0628", data)
     await thinking.edit_text(reply)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_msg = update.message.text
-    thinking = await update.message.reply_text("ثواني أشوفلك الدنيا..")
+    thinking = await update.message.reply_text("\u062b\u0648\u0627\u0646\u064a \u0623\u0634\u0648\u0641\u0644\u0643 \u0627\u0644\u062f\u0646\u064a\u0627..")
     data = fetch_blynk_data()
     reply = ask_gemini(user_msg, data)
     await thinking.edit_text(reply)
@@ -148,7 +119,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 if __name__ == "__main__":
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
-    
     if not TELEGRAM_TOKEN:
         print("TELEGRAM_TOKEN is missing!")
     else:
