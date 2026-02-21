@@ -133,6 +133,8 @@ if __name__ == "__main__":
         ApplicationBuilder()
         .token(TELEGRAM_TOKEN)
         .connect_timeout(30)
+                .get_updates_read_timeout(30)
+                .get_updates_connect_timeout(30)
         .read_timeout(30)
         .build()
     )
@@ -141,7 +143,5 @@ if __name__ == "__main__":
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.run_polling(
         drop_pending_updates=True,
-        allowed_updates=Update.ALL_TYPES,
-        timeout=30,
-        pool_timeout=10
+        allowed_updates=Update.ALL_TYPES
     )
