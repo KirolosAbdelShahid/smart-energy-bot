@@ -4,28 +4,19 @@ import time
 import threading
 import requests
 from flask import Flask
-from groq import Groq
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
 # ===== Config =====
 BLYNK_TOKEN = os.environ.get("BLYNK_AUTH", "PQQtawp93VKXnQBxMMzEr7wF47fKXe5R")
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip().strip('"').strip("'")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 BLYNK_BASE = "https://blynk.cloud/external/api/get"
-LOADS = ["Lomba", "Marwaha", "Shaffat", "Motor", "Tala9a"]
+GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 LOADS_AR = ["لمبة", "مروحة", "شفاط", "موتور", "تلاجة"]
 
-print(f"GROQ_API_KEY set: {bool(GROQ_API_KEY)} (len={len(GROQ_API_KEY)})")
+print(f"GROQ_API_KEY set: {bool(GROQ_API_KEY)} (len={len(GROQ_API_KEY)}) starts_with_gsk: {GROQ_API_KEY.startswith('gsk_')}")
 print(f"TELEGRAM_TOKEN set: {bool(TELEGRAM_TOKEN)}")
-
-# Build Groq client only if key is set
-groq_client = None
-if GROQ_API_KEY:
-    groq_client = Groq(api_key=GROQ_API_KEY)
-    print("Groq client initialized successfully")
-else:
-    print("WARNING: GROQ_API_KEY is empty!")
 
 flask_app = Flask(__name__)
 
@@ -35,7 +26,7 @@ def home():
 
 @flask_app.route('/health')
 def health():
-    return json.dumps({"status": "ok", "groq": bool(groq_client)})
+    return json.dumps({"status": "ok", "groq_key": bool(GROQ_API_KEY)})
 
 def run_flask():
     port = int(os.environ.get('PORT', 8080))
@@ -49,12 +40,7 @@ def fetch_blynk_data():
             pf = float(requests.get(f"{BLYNK_BASE}?token={BLYNK_TOKEN}&pin=V{i+5}", timeout=5).text)
             kwh = float(requests.get(f"{BLYNK_BASE}?token={BLYNK_TOKEN}&pin=V{i+10}",timeout=5).text)
             va = float(requests.get(f"{BLYNK_BASE}?token={BLYNK_TOKEN}&pin=V{i+15}",timeout=5).text)
-            data[name] = {
-                "W": round(w, 2),
-                "PF": round(pf, 2),
-                "kWh": round(kwh, 4),
-                "VA": round(va, 2)
-            }
+            data[name] = {"W": round(w,2), "PF": round(pf,2), "kWh": round(kwh,4), "VA": round(va,2)}
         except Exception as e:
             data[name] = {"error": str(e)}
     return data
@@ -67,21 +53,28 @@ SYSTEM_PROMPT = (
 )
 
 def ask_groq(user_question, energy_data):
-    if not groq_client:
+    if not GROQ_API_KEY:
         return "GROQ_API_KEY missing - AI not available"
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json"
+    }
     user_content = "Energy meter data now:\n" + json.dumps(energy_data, ensure_ascii=False, indent=2) + "\nUser question: " + user_question
+    payload = {
+        "model": "llama-3.3-70b-versatile",
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_content}
+        ],
+        "temperature": 0.7,
+        "max_tokens": 1024
+    }
     try:
-        response = groq_client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_content}
-            ],
-            temperature=0.7,
-            max_tokens=1024,
-            stream=False
-        )
-        return response.choices[0].message.content
+        r = requests.post(GROQ_URL, headers=headers, json=payload, timeout=30)
+        if r.status_code == 200:
+            return r.json()["choices"][0]["message"]["content"]
+        else:
+            return f"Groq HTTP {r.status_code}: {r.text[:200]}"
     except Exception as e:
         return f"Groq error: {str(e)}"
 
@@ -123,7 +116,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 if __name__ == "__main__":
     print("Smart Energy Bot starting...")
-    # Wait for old instance to release Telegram polling
     time.sleep(15)
     print("Smart Energy Bot started!")
 
@@ -151,6 +143,5 @@ if __name__ == "__main__":
 
     application.run_polling(
         drop_pending_updates=True,
-        allowed_updates=Update.ALL_TYPES,
-        close_loop=False
+        allowed_updates=Update.ALL_TYPES
     )
