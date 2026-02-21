@@ -64,12 +64,7 @@ def ask_gemini(user_question, energy_data):
         return "يا صاحبي مفيش مفتاح Gemini API.. شغلني الأول!"
     
     data_text = json.dumps(energy_data, ensure_ascii=False, indent=2)
-    prompt = f"{SYSTEM_PROMPT}
-
-بيانات العداد الحالية:
-{data_text}
-
-سؤال المستخدم: {user_question}"
+    prompt = SYSTEM_PROMPT + "\n\n" + data_text + "\n\n" + user_question
     
     payload = {
         "contents": [{
